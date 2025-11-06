@@ -193,7 +193,7 @@ function App() {
                   <Metas user={user} categories={categories} transactions={transactions} />
                 )}
                 {currentPage === 'notifications' && (
-                  <Notifications />
+                  <Notifications user={user} />
                 )}
                 {currentPage === 'settings' && (
                   <SettingsPage user={user} />
