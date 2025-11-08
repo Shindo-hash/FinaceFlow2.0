@@ -1,161 +1,269 @@
-import { useState } from 'react'
-import { X, Calendar, DollarSign } from 'lucide-react'
-import { formatCurrency, formatDate } from '../utils/formatting'
+import { useState, useEffect } from 'react'
+import { X, ChevronLeft, ChevronRight, DollarSign, Calendar, Clock } from 'lucide-react'
+import { formatCurrency } from '../utils/formatting'
 
-const InvoiceModal = ({ card, invoice, installments, onClose, onPayInvoice }) => {
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
+const InvoiceModal = ({ card, invoices, installments, onClose, onPayInvoice }) => {
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [currentInvoice, setCurrentInvoice] = useState(null)
+  const [canPayInvoice, setCanPayInvoice] = useState(false)
 
-  if (!card || !invoice) return null
+  // Atualizar fatura atual quando muda mês/ano
+  useEffect(() => {
+    const invoice = invoices.find(
+      inv => inv.month === selectedMonth && inv.year === selectedYear
+    )
+    setCurrentInvoice(invoice || null)
+  }, [selectedMonth, selectedYear, invoices])
 
-  const invoiceInstallments = installments.filter(i => 
-    i.invoice_id === invoice.id
+  // Verificar se pode mostrar botão de pagamento
+  useEffect(() => {
+    if (!currentInvoice) {
+      setCanPayInvoice(false)
+      return
+    }
+
+    const today = new Date()
+    const currentDay = today.getDate()
+    const currentMonth = today.getMonth() + 1
+    const currentYear = today.getFullYear()
+
+    // Só pode pagar se for a fatura do mês atual
+    if (currentInvoice.month !== currentMonth || currentInvoice.year !== currentYear) {
+      setCanPayInvoice(false)
+      return
+    }
+
+    // Verifica se está entre fechamento e vencimento
+    const closingDay = card.closing_day
+    const dueDay = card.due_day
+
+    // Caso 1: Fechamento antes do vencimento no mesmo mês (ex: fecha dia 5, vence dia 15)
+    if (closingDay < dueDay) {
+      setCanPayInvoice(currentDay >= closingDay && currentDay <= dueDay)
+    } 
+    // Caso 2: Fechamento depois do vencimento (ex: fecha dia 25, vence dia 10 do mês seguinte)
+    else {
+      setCanPayInvoice(currentDay >= closingDay || currentDay <= dueDay)
+    }
+  }, [currentInvoice, card.closing_day, card.due_day])
+
+  // Navegar entre meses
+  const goToPreviousMonth = () => {
+    if (selectedMonth === 1) {
+      setSelectedMonth(12)
+      setSelectedYear(selectedYear - 1)
+    } else {
+      setSelectedMonth(selectedMonth - 1)
+    }
+  }
+
+  const goToNextMonth = () => {
+    if (selectedMonth === 12) {
+      setSelectedMonth(1)
+      setSelectedYear(selectedYear + 1)
+    } else {
+      setSelectedMonth(selectedMonth + 1)
+    }
+  }
+
+  // Filtrar parcelas desta fatura
+  const invoiceInstallments = installments.filter(
+    inst => inst.invoice_id === currentInvoice?.id
   )
-  
-  const today = new Date()
-  const closing = new Date(today.getFullYear(), today.getMonth(), card.closing_day)
-  const dueDate = new Date(today.getFullYear(), today.getMonth(), card.due_day)
-  
-  const canPayInvoice = today >= closing && today <= dueDate
 
-  const handlePayInvoice = async () => {
-    setLoading(true)
-    setMessage('')
+  // Calcular total da fatura
+  const invoiceTotal = currentInvoice?.total || 0
 
-    try {
-      await onPayInvoice(invoice.id)
-      setMessage('✅ Fatura paga com sucesso!')
-      setTimeout(() => {
-        onClose()
-      }, 2000)
-    } catch (err) {
-      setMessage('❌ Erro ao pagar: ' + err.message)
-    } finally {
-      setLoading(false)
+  // Status da fatura
+  const isPaid = currentInvoice?.status === 'paid'
+  const isPending = currentInvoice?.status === 'pending'
+
+  // Meses em português
+  const monthNames = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ]
+
+  const handlePayment = async () => {
+    if (!currentInvoice) return
+    
+    const confirmed = window.confirm(
+      `Confirma o pagamento da fatura de ${formatCurrency(invoiceTotal)}?`
+    )
+    
+    if (confirmed) {
+      try {
+        await onPayInvoice(currentInvoice.id)
+        alert('✅ Fatura paga com sucesso! Limite liberado.')
+      } catch (err) {
+        alert('❌ Erro ao pagar fatura: ' + err.message)
+      }
     }
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-900 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-800">
+      <div className="bg-slate-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        
         {/* Header */}
-        <div className="sticky top-0 bg-slate-800 border-b border-slate-700 p-6 flex items-center justify-between">
+        <div className="p-6 border-b border-slate-700 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-white">{card.name}</h2>
-            <p className="text-slate-400">
-              {new Date(2025, invoice.month - 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
-            </p>
+            <p className="text-slate-400 text-sm">•••• •••• •••• {card.number}</p>
           </div>
           <button
             onClick={onClose}
             className="p-2 hover:bg-slate-700 rounded-lg transition"
           >
-            <X className="w-6 h-6 text-slate-300" />
+            <X className="w-6 h-6 text-slate-400" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Resumo */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-slate-800 p-4 rounded-lg">
-              <p className="text-slate-400 text-sm mb-1">Vencimento</p>
-              <p className="text-white font-semibold">{card.due_day}º do mês</p>
-            </div>
-            <div className="bg-slate-800 p-4 rounded-lg">
-              <p className="text-slate-400 text-sm mb-1">Total</p>
-              <p className="text-white font-semibold">{formatCurrency(invoice.total)}</p>
-            </div>
-            <div className="bg-slate-800 p-4 rounded-lg">
-              <p className="text-slate-400 text-sm mb-1">Status</p>
-              <p className={`font-semibold ${invoice.status === 'paid' ? 'text-green-400' : 'text-yellow-400'}`}>
-                {invoice.status === 'paid' ? 'Paga' : 'Aberta'}
-              </p>
-            </div>
-          </div>
-
-          {/* Mensagem */}
-          {message && (
-            <div className={`px-4 py-3 rounded-lg text-sm font-medium ${
-              message.includes('✅') 
-                ? 'bg-green-500/20 border border-green-500/50 text-green-400'
-                : 'bg-red-500/20 border border-red-500/50 text-red-400'
-            }`}>
-              {message}
-            </div>
-          )}
-
-          {/* Compras */}
-          <div>
-            <h3 className="text-lg font-semibold text-white mb-4">Compras do Mês</h3>
-            <div className="space-y-3">
-              {invoiceInstallments.length > 0 ? (
-                invoiceInstallments.map((installment) => (
-                  <div
-                    key={installment.id}
-                    className="bg-slate-800 p-4 rounded-lg flex items-center justify-between"
-                  >
-                    <div className="flex-1">
-                      <p className="text-white font-medium">
-                        {installment.transaction?.description || 'Transação'}
-                      </p>
-                      <p className="text-slate-400 text-sm">
-                        Parcela {installment.installment_number}/{installment.total_installments}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-white font-semibold">
-                        {formatCurrency(installment.amount)}
-                      </p>
-                      <p className={`text-sm ${installment.status === 'paid' ? 'text-green-400' : 'text-yellow-400'}`}>
-                        {installment.status === 'paid' ? '✅ Paga' : '⏳ Pendente'}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-slate-400 text-center py-8">Nenhuma compra neste mês</p>
-              )}
-            </div>
-          </div>
-
-          {/* Total */}
-          <div className="bg-purple-600/20 border border-purple-500/50 p-4 rounded-lg">
-            <div className="flex justify-between items-center">
-              <span className="text-white font-semibold">Total da Fatura</span>
-              <span className="text-2xl font-bold text-purple-400">{formatCurrency(invoice.total)}</span>
-            </div>
-          </div>
-
-          {/* Botões */}
-          <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              className="flex-1 btn-secondary"
-            >
-              Fechar
-            </button>
-            {canPayInvoice && invoice.status !== 'paid' && (
-              <button
-                onClick={handlePayInvoice}
-                disabled={loading}
-                className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed text-base font-semibold"
-              >
-                {loading ? 'Processando...' : 'Pagar Fatura'}
-              </button>
+        {/* Navegação de Meses */}
+        <div className="p-4 bg-slate-900/50 flex items-center justify-between">
+          <button
+            onClick={goToPreviousMonth}
+            className="p-2 hover:bg-slate-700 rounded-lg transition"
+          >
+            <ChevronLeft className="w-5 h-5 text-white" />
+          </button>
+          
+          <div className="text-center">
+            <h3 className="text-xl font-bold text-white">
+              {monthNames[selectedMonth - 1]} {selectedYear}
+            </h3>
+            {currentInvoice && (
+              <span className={`text-xs px-3 py-1 rounded-full inline-block mt-1 ${
+                isPaid ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+              }`}>
+                {isPaid ? '✅ Paga' : '⏳ Pendente'}
+              </span>
             )}
           </div>
-
-          {canPayInvoice && invoice.status === 'paid' && (
-            <p className="text-center text-green-400 text-sm">✅ Fatura já foi paga</p>
-          )}
           
-          {!canPayInvoice && (
-            <p className="text-center text-slate-400 text-sm">
-              Botão de pagamento disponível entre {card.closing_day}º e {card.due_day}º
-            </p>
+          <button
+            onClick={goToNextMonth}
+            className="p-2 hover:bg-slate-700 rounded-lg transition"
+          >
+            <ChevronRight className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        {/* Conteúdo */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          
+          {!currentInvoice ? (
+            <div className="text-center py-12 text-slate-400">
+              <Calendar className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <p>Nenhuma fatura registrada para este mês</p>
+            </div>
+          ) : (
+            <>
+              {/* Resumo da Fatura */}
+              <div className="bg-slate-900/50 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Fechamento
+                  </span>
+                  <span className="text-white font-semibold">
+                    {card.closing_day}/{selectedMonth.toString().padStart(2, '0')}
+                  </span>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Vencimento
+                  </span>
+                  <span className="text-white font-semibold">
+                    {card.due_day}/{selectedMonth.toString().padStart(2, '0')}
+                  </span>
+                </div>
+                
+                <div className="pt-3 border-t border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 flex items-center gap-2">
+                      <DollarSign className="w-4 h-4" />
+                      Total da Fatura
+                    </span>
+                    <span className="text-2xl font-bold text-white">
+                      {formatCurrency(invoiceTotal)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de Parcelas */}
+              <div>
+                <h4 className="text-lg font-semibold text-white mb-3">
+                  Parcelas ({invoiceInstallments.length})
+                </h4>
+                
+                {invoiceInstallments.length === 0 ? (
+                  <p className="text-slate-400 text-sm text-center py-8">
+                    Nenhuma parcela nesta fatura
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {invoiceInstallments.map((inst) => (
+                      <div
+                        key={inst.id}
+                        className="bg-slate-900/50 rounded-lg p-3 flex items-center justify-between"
+                      >
+                        <div className="flex-1">
+                          <p className="text-white font-medium">
+                            {inst.transaction?.description || 'Compra'}
+                          </p>
+                          <p className="text-slate-400 text-xs">
+                            Parcela {inst.installment_number}/{inst.total_installments}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-white font-semibold">
+                            {formatCurrency(inst.amount)}
+                          </p>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            inst.status === 'paid' 
+                              ? 'bg-green-500/20 text-green-400' 
+                              : 'bg-yellow-500/20 text-yellow-400'
+                          }`}>
+                            {inst.status === 'paid' ? 'Pago' : 'Pendente'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
+
+        {/* Footer - Botão de Pagamento */}
+        {currentInvoice && isPending && canPayInvoice && (
+          <div className="p-6 border-t border-slate-700 bg-slate-900/50">
+            <button
+              onClick={handlePayment}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition flex items-center justify-center gap-2"
+            >
+              <DollarSign className="w-5 h-5" />
+              Pagar Fatura - {formatCurrency(invoiceTotal)}
+            </button>
+            <p className="text-xs text-slate-400 text-center mt-2">
+              Disponível apenas entre o dia {card.closing_day} e {card.due_day}
+            </p>
+          </div>
+        )}
+
+        {currentInvoice && isPaid && (
+          <div className="p-6 border-t border-slate-700 bg-green-500/10">
+            <p className="text-center text-green-400 font-semibold">
+              ✅ Fatura paga em {new Date(currentInvoice.paid_at).toLocaleDateString('pt-BR')}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

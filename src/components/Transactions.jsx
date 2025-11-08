@@ -35,6 +35,25 @@ const Transactions = ({ transactions, categories, cards, onAdd, onDelete }) => {
       return
     }
 
+    // ✅ VALIDAÇÃO DE LIMITE DO CARTÃO
+    if (formData.card_id) {
+      const selectedCard = cards.find(c => c.id === formData.card_id)
+      
+      if (selectedCard) {
+        const totalCompra = parseFloat(formData.amount) * parseInt(formData.installments || 1)
+        const limiteDisponivel = selectedCard.limit_total - (selectedCard.limit_used || 0)
+        
+        if (totalCompra > limiteDisponivel) {
+          setMessage(
+            `❌ Limite insuficiente! ` +
+            `Você precisa de ${formatCurrency(totalCompra)} mas tem apenas ${formatCurrency(limiteDisponivel)} disponível. ` +
+            `(Limite usado: ${formatCurrency(selectedCard.limit_used || 0)} de ${formatCurrency(selectedCard.limit_total)})`
+          )
+          return
+        }
+      }
+    }
+
     setLoading(true)
 
     try {
@@ -72,6 +91,33 @@ const Transactions = ({ transactions, categories, cards, onAdd, onDelete }) => {
     if (filter === 'all') return true
     return t.type === filter
   })
+
+  // Calcular preview do limite ao digitar
+  const getLimitPreview = () => {
+    if (!formData.card_id || !formData.amount) return null
+    
+    const selectedCard = cards.find(c => c.id === formData.card_id)
+    if (!selectedCard) return null
+    
+    const totalCompra = parseFloat(formData.amount) * parseInt(formData.installments || 1)
+    const limiteAtual = selectedCard.limit_used || 0
+    const novoLimite = limiteAtual + totalCompra
+    const limiteDisponivel = selectedCard.limit_total - limiteAtual
+    const percentual = Math.round((novoLimite / selectedCard.limit_total) * 100)
+    
+    const suficiente = totalCompra <= limiteDisponivel
+    
+    return {
+      suficiente,
+      totalCompra,
+      limiteDisponivel,
+      novoLimite,
+      limiteTotal: selectedCard.limit_total,
+      percentual
+    }
+  }
+
+  const limitPreview = getLimitPreview()
 
   return (
     <div className="space-y-6">
@@ -141,7 +187,7 @@ const Transactions = ({ transactions, categories, cards, onAdd, onDelete }) => {
               type="number"
               placeholder="Valor (R$)"
               value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) })}
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
               className="input-field w-full"
               step="0.01"
             />
@@ -181,8 +227,35 @@ const Transactions = ({ transactions, categories, cards, onAdd, onDelete }) => {
                     onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
                     className="input-field w-full"
                     min="1"
-                    max="12"
+                    max="24"
                   />
+                )}
+
+                {/* Preview do Limite */}
+                {limitPreview && (
+                  <div className={`p-4 rounded-lg border ${
+                    limitPreview.suficiente 
+                      ? 'bg-blue-500/10 border-blue-500/30' 
+                      : 'bg-red-500/10 border-red-500/30'
+                  }`}>
+                    <p className="text-sm font-semibold mb-2">
+                      {limitPreview.suficiente ? '✅ Limite suficiente' : '❌ Limite insuficiente'}
+                    </p>
+                    <div className="space-y-1 text-xs">
+                      <p className="text-slate-300">
+                        Valor total: <span className="font-semibold">{formatCurrency(limitPreview.totalCompra)}</span>
+                        {parseInt(formData.installments) > 1 && (
+                          <span className="text-slate-400"> ({formData.installments}x de {formatCurrency(parseFloat(formData.amount))})</span>
+                        )}
+                      </p>
+                      <p className="text-slate-300">
+                        Limite disponível: <span className="font-semibold">{formatCurrency(limitPreview.limiteDisponivel)}</span>
+                      </p>
+                      <p className={limitPreview.suficiente ? 'text-blue-400' : 'text-red-400'}>
+                        Novo limite usado: <span className="font-semibold">{formatCurrency(limitPreview.novoLimite)}</span> de {formatCurrency(limitPreview.limiteTotal)} ({limitPreview.percentual}%)
+                      </p>
+                    </div>
+                  </div>
                 )}
               </>
             )}
@@ -199,7 +272,7 @@ const Transactions = ({ transactions, categories, cards, onAdd, onDelete }) => {
             <div className="flex gap-2">
               <button 
                 onClick={handleSubmit} 
-                disabled={loading}
+                disabled={loading || (limitPreview && !limitPreview.suficiente)}
                 className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Salvando...' : 'Salvar'}

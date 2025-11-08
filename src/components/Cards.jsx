@@ -10,7 +10,7 @@ const Cards = ({ cards, onAdd, onDelete, user }) => {
   const [showForm, setShowForm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
-  const [selectedInvoice, setSelectedInvoice] = useState(null)
+  const [selectedCard, setSelectedCard] = useState(null)
   const [invoices, setInvoices] = useState([])
   const [installments, setInstallments] = useState([])
   const [formData, setFormData] = useState({
@@ -23,46 +23,52 @@ const Cards = ({ cards, onAdd, onDelete, user }) => {
     color: '#8B5CF6'
   })
 
-  // Carregar faturas quando abre modal
+  // Carregar faturas e parcelas quando seleciona um cartão
   useEffect(() => {
-    if (selectedInvoice?.id) {
-      fetchInvoiceDetails(selectedInvoice.id)
+    if (selectedCard?.id) {
+      fetchCardData(selectedCard.id)
     }
-  }, [selectedInvoice])
+  }, [selectedCard])
 
-  const fetchInvoiceDetails = async (cardId) => {
+  const fetchCardData = async (cardId) => {
     try {
       if (!cardId || !user?.id) {
         console.error('Card ID ou User ID ausentes', { cardId, userId: user?.id })
         return
       }
 
-      console.log('📥 Buscando faturas para card:', cardId)
+      console.log('🔥 Buscando dados do cartão:', cardId)
 
-      const { data: inv, error: invError } = await supabase
+      // Buscar TODAS as faturas deste cartão (passadas, atual e futuras)
+      const { data: invoicesData, error: invError } = await supabase
         .from('invoices')
         .select('*')
         .eq('card_id', cardId)
+        .order('year', { ascending: false })
         .order('month', { ascending: false })
 
       if (invError) throw invError
 
-      // Buscar TODAS as parcelas deste cartão neste mês
-      const { data: inst, error: instError } = await supabase
+      // Buscar TODAS as parcelas deste cartão
+      const { data: installmentsData, error: instError } = await supabase
         .from('installments')
-        .select('*, transaction:transactions(description), invoice:invoices(month, year)')
+        .select(`
+          *,
+          transaction:transactions(description)
+        `)
         .eq('user_id', user.id)
+        .in('invoice_id', invoicesData?.map(inv => inv.id) || [])
         .order('created_at', { ascending: false })
 
       if (instError) throw instError
 
-      console.log('✅ Faturas carregadas:', inv)
-      console.log('✅ Parcelas carregadas:', inst)
+      console.log('✅ Faturas carregadas:', invoicesData)
+      console.log('✅ Parcelas carregadas:', installmentsData)
 
-      setInvoices(inv || [])
-      setInstallments(inst || [])
+      setInvoices(invoicesData || [])
+      setInstallments(installmentsData || [])
     } catch (err) {
-      console.error('❌ Erro ao carregar detalhes:', err)
+      console.error('❌ Erro ao carregar dados:', err)
     }
   }
 
@@ -70,9 +76,13 @@ const Cards = ({ cards, onAdd, onDelete, user }) => {
     try {
       console.log('💳 Pagando fatura:', invoiceId)
 
+      // Atualizar status da fatura
       const { data, error } = await supabase
         .from('invoices')
-        .update({ status: 'paid' })
+        .update({ 
+          status: 'paid',
+          paid_at: new Date().toISOString()
+        })
         .eq('id', invoiceId)
         .select()
 
@@ -83,10 +93,13 @@ const Cards = ({ cards, onAdd, onDelete, user }) => {
 
       console.log('✅ Fatura atualizada:', data)
 
-      // Atualizar installments pra paid
+      // Atualizar parcelas para paid
       const { error: instError } = await supabase
         .from('installments')
-        .update({ status: 'paid' })
+        .update({ 
+          status: 'paid',
+          paid_at: new Date().toISOString()
+        })
         .eq('invoice_id', invoiceId)
 
       if (instError) {
@@ -96,15 +109,18 @@ const Cards = ({ cards, onAdd, onDelete, user }) => {
 
       console.log('✅ Parcelas atualizadas para paga')
 
+      // O trigger no banco vai liberar o limite automaticamente
+
       // Recarregar dados
-      if (selectedInvoice?.id) {
-        fetchInvoiceDetails(selectedInvoice.id)
+      if (selectedCard?.id) {
+        await fetchCardData(selectedCard.id)
       }
     } catch (err) {
       console.error('❌ Erro completo:', err)
       throw err
     }
   }
+
   const handleSubmit = async () => {
     if (!formData.name || !formData.limit_total) {
       setMessage('❌ Preencha todos os campos obrigatórios')
@@ -299,7 +315,7 @@ const Cards = ({ cards, onAdd, onDelete, user }) => {
 
                 {/* Botão Ver Fatura */}
                 <button
-                  onClick={() => setSelectedInvoice(card)}
+                  onClick={() => setSelectedCard(card)}
                   className="w-full mt-3 pt-3 border-t border-white/20 bg-white/10 hover:bg-white/20 text-white text-sm py-1 rounded flex items-center justify-center gap-1 transition"
                 >
                   <Eye className="w-3 h-3" />
@@ -312,12 +328,16 @@ const Cards = ({ cards, onAdd, onDelete, user }) => {
       </div>
 
       {/* Modal Fatura */}
-      {selectedInvoice && invoices.length > 0 && (
+      {selectedCard && (
         <InvoiceModal
-          card={selectedInvoice}
-          invoice={invoices.find(inv => inv.month === new Date().getMonth() + 1 && inv.year === new Date().getFullYear()) || invoices[0]}
+          card={selectedCard}
+          invoices={invoices}
           installments={installments}
-          onClose={() => setSelectedInvoice(null)}
+          onClose={() => {
+            setSelectedCard(null)
+            setInvoices([])
+            setInstallments([])
+          }}
           onPayInvoice={handlePayInvoice}
         />
       )}

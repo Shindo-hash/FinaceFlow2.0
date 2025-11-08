@@ -44,14 +44,25 @@ export const useTransactions = (userId) => {
     try {
       console.log('📤 Enviando transação:', transaction)
       
+      // Garantir que os valores estão corretos
+      const transactionData = {
+        user_id: userId,
+        description: transaction.description,
+        amount: parseFloat(transaction.amount),
+        type: transaction.type,
+        category_id: transaction.category_id || null,
+        card_id: transaction.card_id || null,
+        date: transaction.date,
+        installments: parseInt(transaction.installments) || 1,
+        status: 'pending'
+      }
+
+      console.log('📦 Dados processados:', transactionData)
+      
       const { data, error: err } = await supabase
         .from('transactions')
-        .insert([{ 
-          ...transaction, 
-          user_id: userId,
-          installments: parseInt(transaction.installments) || 1
-        }])
-        .select()
+        .insert([transactionData])
+        .select('*, categories(name, icon), cards(name)')
 
       if (err) {
         console.error('❌ Erro ao inserir:', err)
@@ -59,7 +70,24 @@ export const useTransactions = (userId) => {
       }
       
       console.log('✅ Transação criada:', data[0])
-      setTransactions([data[0], ...transactions])
+      
+      // Aguardar um pouco para garantir que o trigger rodou
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Recarregar transações do banco
+      const { data: allTransactions, error: fetchErr } = await supabase
+        .from('transactions')
+        .select('*, categories(name, icon), cards(name)')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+
+      if (fetchErr) {
+        console.error('❌ Erro ao recarregar:', fetchErr)
+      } else {
+        setTransactions(allTransactions || [])
+        console.log('✅ Transações recarregadas:', allTransactions.length)
+      }
+      
       return { success: true, data: data[0] }
     } catch (err) {
       console.error('❌ Erro completo:', err)
