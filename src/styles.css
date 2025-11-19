@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  @apply transition-colors duration-200;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100;
+}
+
+.glass {
+  @apply bg-white/10 backdrop-blur-md border border-white/20;
+}
+
+.card {
+  @apply bg-slate-900 border border-slate-800 rounded-lg p-6;
+}
+
+.btn-primary {
+  @apply bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition;
+}
+
+.btn-secondary {
+  @apply bg-slate-800 hover:bg-slate-700 text-white font-semibold py-2 px-4 rounded-lg transition;
+}
+
+.input-field {
+  @apply bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500;
+}
+
+.badge-success {
+  @apply bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-sm font-medium;
+}
+
+.badge-warning {
+  @apply bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full text-sm font-medium;
+}
+
+.badge-danger {
+  @apply bg-red-500/20 text-red-400 px-3 py-1 rounded-full text-sm font-medium;
+}
