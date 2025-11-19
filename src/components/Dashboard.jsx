@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, Wallet, AlertCircle, TrendingDown } from 'lucide-react'
-import { formatCurrency, calculateMonthlyTotal, calculateByCategory } from '../utils/formatting'
+import { TrendingUp, Wallet, AlertCircle, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react'
+import { formatCurrency, calculateMonthlyTotal, calculateByCategory, formatDate } from '../utils/formatting'
 import { calculateForecast, getCurrentMonthSpending } from '../utils/forecast'
 
 const Dashboard = ({ transactions, cards, user }) => {
   const [chartData, setChartData] = useState([])
   const [categoryData, setCategoryData] = useState([])
+  const [expandedCategory, setExpandedCategory] = useState(null)
   const [stats, setStats] = useState({ 
     income: 0, 
     expense: 0, 
@@ -58,6 +59,20 @@ const Dashboard = ({ transactions, cards, user }) => {
     }
     setChartData(last7Days)
   }, [transactions])
+
+  const toggleCategory = (categoryName) => {
+    if (expandedCategory === categoryName) {
+      setExpandedCategory(null)
+    } else {
+      setExpandedCategory(categoryName)
+    }
+  }
+
+  const getCategoryTransactions = (categoryName) => {
+    return transactions
+      .filter(t => t.categories?.name === categoryName && t.type === 'expense')
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+  }
 
   return (
     <div className="space-y-6">
@@ -152,17 +167,47 @@ const Dashboard = ({ transactions, cards, user }) => {
         </div>
       </div>
 
-      {/* Top Categories */}
+      {/* Top Categories com Expansão */}
       <div className="card">
         <h3 className="text-lg font-semibold mb-4">Top Categorias</h3>
         <div className="space-y-3">
           {categoryData.slice(0, 3).map((category, index) => (
-            <div key={index} className="flex items-center justify-between p-3 bg-slate-800 rounded-lg">
-              <span className="text-slate-300">{category.name}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-right">{formatCurrency(category.amount)}</span>
-                <span className="badge-warning">{category.count} transações</span>
-              </div>
+            <div key={index}>
+              <button
+                onClick={() => toggleCategory(category.name)}
+                className="w-full flex items-center justify-between p-3 bg-slate-800 rounded-lg hover:bg-slate-700 transition cursor-pointer"
+              >
+                <span className="text-slate-300">{category.name}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-right">{formatCurrency(category.amount)}</span>
+                  <span className="badge-warning">{category.count} transações</span>
+                  {expandedCategory === category.name ? (
+                    <ChevronUp className="w-5 h-5 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                  )}
+                </div>
+              </button>
+
+              {/* Transações Expandidas */}
+              {expandedCategory === category.name && (
+                <div className="mt-2 ml-4 space-y-2 bg-slate-900 rounded-lg p-3">
+                  {getCategoryTransactions(category.name).map((transaction) => (
+                    <div
+                      key={transaction.id}
+                      className="flex items-center justify-between py-2 px-3 bg-slate-800 rounded"
+                    >
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-white">{transaction.description}</p>
+                        <p className="text-xs text-slate-400">{formatDate(transaction.date)}</p>
+                      </div>
+                      <span className="text-sm font-semibold text-red-400">
+                        {formatCurrency(transaction.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
